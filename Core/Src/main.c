@@ -44,15 +44,23 @@
 TIM_HandleTypeDef htim1;
 
 /* USER CODE BEGIN PV */
+// Elapsed-time state for the clock/stopwatch, updated in the TIM1 ISR and displayed in the main loop.
+
 uint8_t Sec=0;
 
 uint8_t Min=0;
 
 uint8_t Hour=0;
 
+// Sub-second tick counter; increments every TIM1 period elapse, rolls over into Sec every 10 ticks.
+
 double counter=0;
 
+Buffer to store Minute , Sec and Hour begining from 0:0:0
+
 char Buffer [20]={'0'};
+
+// Set by the ISR(s) to signal the main loop that the LCD display needs to be refreshed.
 
 uint8_t flag=0;
 
@@ -105,6 +113,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 lcd_init();
 
+// Start the 1-second base timer in interrupt mode to drive the Sec/Min/Hour counters.
 HAL_TIM_Base_Start_IT(&htim1);
 
   /* USER CODE END 2 */
@@ -117,11 +126,16 @@ HAL_TIM_Base_Start_IT(&htim1);
 	
   while (1)
   {
+
+// Only touch the LCD when the ISR signals a new tick, keeping the loop free to run other work
+
 		if (flag){
 		flag=0;
 		lcd_clear();
 		lcd_gotoxy(0,0);
-		sprintf(Buffer,"%2d:%2d:%2d",Hour,Min,Sec);
+
+
+		sprintf(Buffer,"%2d:%2d:%2d",Hour,Min,Sec); 
 		lcd_puts(Buffer);
 	}
 		
@@ -192,6 +206,8 @@ static void MX_TIM1_Init(void)
   /* USER CODE BEGIN TIM1_Init 1 */
 
   /* USER CODE END TIM1_Init 1 */
+// Prescaler/period chosen to generate a 100 ms update event (used as the 1/10 s tick for the clock).
+
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 7999;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -240,6 +256,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, lcd_d0_Pin|lcd_d1_Pin|lcd_d2_Pin|lcd_d3_Pin
                           |lcd_d4_Pin|lcd_d5_Pin|lcd_d6_Pin|lcd_d7_Pin, GPIO_PIN_RESET);
 
+
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, lcd_RW_Pin|lcd_RS_Pin|lcd_EN_Pin, GPIO_PIN_RESET);
 
@@ -275,17 +292,19 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+// EXTI callback shared by the start/stop button lines (GPIOB pins 6 and 7).
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 
-	if (GPIO_Pin==GPIO_PIN_6) //For start Timer external gpio pin pulldown
+	if (GPIO_Pin==GPIO_PIN_6) //For start Timer, IF  external GPIO pin pulldown TRIGGERED
 	{
 			HAL_TIM_Base_Start_IT(&htim1); 
 	}
 	
-	if (GPIO_Pin==GPIO_PIN_7) //For stop Timer EXTERNAL GPIO pin
+	if (GPIO_Pin==GPIO_PIN_7) //For stop Timer, IF  EXTERNAL GPIO pin pulldown TRIGGERED
 	{
+    // Stop the timer and reset the clock state so the next start begins from 00:00:00.
 			HAL_TIM_Base_Stop(&htim1);
 			Sec=0;
 			Min=0;
@@ -297,12 +316,15 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 
 
-
+// TIM1 update-event callback: advances the sub-second counter and cascades into Sec/Min/Hour.
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM1)
 	{
 	counter ++;
+  
+// 10 ticks of 100 ms have elapsed: one full second.
+
 		if (counter>9){
 			
 			counter = 0;
